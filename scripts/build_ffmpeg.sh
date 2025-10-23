@@ -2,16 +2,16 @@
 set -e
 
 TARGET="$1"
-ARCH="$2"
-OS_TYPE="$3"
+ARTIFACT_SUFFIX="$2"
+RUNNER_OS="$3"
 API_LEVEL="$4"
-OS_TYPE_LOWER=$(echo "$OS_TYPE" | tr '[:upper:]' '[:lower:]')
-FFMPEG_VERSION="8.0"
-INSTALL_DIR="$GITHUB_WORKSPACE/ffmpeg_install_${ARCH}" # Use Arch in install dir to avoid conflicts
-PACKAGE_NAME="ffmpeg-${FFMPEG_VERSION}-${OS_TYPE_LOWER}-${ARCH}.tar.gz"
-SOURCE_DIR="$GITHUB_WORKSPACE/ffmpeg_source_${ARCH}" # Use Arch in source dir
 
-echo "--- Starting FFmpeg build for $OS_TYPE-$ARCH ---"
+FFMPEG_VERSION="8.0"
+INSTALL_DIR="$GITHUB_WORKSPACE/ffmpeg_install_${ARTIFACT_SUFFIX}"
+SOURCE_DIR="$GITHUB_WORKSPACE/ffmpeg_source_${ARTIFACT_SUFFIX}"
+PACKAGE_NAME="ffmpeg-${FFMPEG_VERSION}-${ARTIFACT_SUFFIX}.tar.gz"
+
+echo "--- Starting FFmpeg build for $ARTIFACT_SUFFIX ---"
 echo "Target triple: $TARGET"
 echo "FFmpeg version: $FFMPEG_VERSION"
 echo "Installation directory: $INSTALL_DIR"
@@ -35,7 +35,6 @@ cd "$SOURCE_DIR" # Ensure we are in the source directory
 
 # --- 2. Configure FFmpeg ---
 echo "Configuring FFmpeg..."
-# Common flags for a minimal static audio build
 CONFIG_FLAGS=(
     "--prefix=$INSTALL_DIR"
     "--enable-static"
@@ -129,77 +128,86 @@ CONFIG_FLAGS=(
 )
 
 # --- Platform Specific Configuration ---
+# Determine the actual OS type from the artifact suffix for configuration flags
+OS_TYPE_LOWER=""
+if [[ "$ARTIFACT_SUFFIX" == *"linux"* ]]; then
+    OS_TYPE_LOWER="linux"
+elif [[ "$ARTIFACT_SUFFIX" == *"macos"* ]]; then
+    OS_TYPE_LOWER="macos"
+elif [[ "$ARTIFACT_SUFFIX" == *"android"* ]]; then
+    OS_TYPE_LOWER="android" # Use "android" for target-os flag
+fi
+
 if [[ "$OS_TYPE_LOWER" == "linux" ]]; then
-    if [[ "$TARGET" == *"-android"* ]]; then
-        echo "Configuring for Android $ARCH (API $API_LEVEL)..."
-       if [ -z "$ANDROID_NDK_HOME" ]; then
-           echo "Error: ANDROID_NDK_HOME environment variable is not set."
-           exit 1
-       fi
-       TOOLCHAIN_BIN_PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
-        TOOLCHAIN_PREFIX=""
-        CONFIGURE_ARCH=""
-        case "$ARCH" in
-            "arm64-v8a")
-                TOOLCHAIN_PREFIX="aarch64-linux-android"
-                CONFIGURE_ARCH="aarch64"
-                ;;
-            "armeabi-v7a")
-                TOOLCHAIN_PREFIX="armv7a-linux-androideabi"
-                CONFIGURE_ARCH="arm"
-                ;;
-            "x86_64")
-                TOOLCHAIN_PREFIX="x86_64-linux-android"
-                CONFIGURE_ARCH="x86_64"
-                ;;
-            "x86")
-                TOOLCHAIN_PREFIX="i686-linux-android"
-                CONFIGURE_ARCH="x86"
-                ;;
-            *)
-                echo "Unsupported Android architecture: $ARCH"
-                exit 1
-                ;;
-        esac
-
-        CC="$TOOLCHAIN_BIN_PATH/${TOOLCHAIN_PREFIX}${API_LEVEL}-clang"
-        CXX="$TOOLCHAIN_BIN_PATH/${TOOLCHAIN_PREFIX}${API_LEVEL}-clang++"
-        AR="$TOOLCHAIN_BIN_PATH/llvm-ar"
-        RANLIB="$TOOLCHAIN_BIN_PATH/llvm-ranlib"
-        STRIP="$TOOLCHAIN_BIN_PATH/llvm-strip"
-
-        if [ ! -f "$CC" ]; then
-            echo "Error: Android clang compiler not found at expected path: $CC"
-            echo "Please check NDK installation and environment variables."
-            exit 1
-        fi
-
-        CONFIG_FLAGS+=(
-            "--target-os=android"
-            "--arch=$CONFIGURE_ARCH"
-            "--cc=$CC"
-            "--cxx=$CXX"
-            "--ar=$AR"
-            "--ranlib=$RANLIB"
-            "--strip=$STRIP"
-            # Sysroot is usually handled automatically when using the full compiler path
-            "--cross-prefix=${TOOLCHAIN_PREFIX}-" # Keep this for FFmpeg's internal toolchain detection
-            "--enable-jni"
-            "--disable-iconv"
-            "--disable-xlib"
-        )
-    else
-        echo "Configuring for Linux $ARCH..."
-    fi
+    echo "Configuring for Linux ($ARTIFACT_SUFFIX)..."
+    # Standard Linux build
 elif [[ "$OS_TYPE_LOWER" == "macos" ]]; then
-    echo "Configuring for macOS $ARCH..."
-    # Add macOS specific flags if needed, e.g., SDK path for cross-compilation
-    # if [[ "$TARGET" == "x86_64-apple-darwin" ]]; then
-    #    CONFIG_FLAGS+=("--arch=x86_64" "--extra-cflags=-mmacosx-version-min=10.11")
-    # elif [[ "$TARGET" == "aarch64-apple-darwin" ]]; then
-    #    CONFIG_FLAGS+=("--arch=arm64" "--extra-cflags=-mmacosx-version-min=11.0")
-    # fi
+    echo "Configuring for macOS ($ARTIFACT_SUFFIX)..."
+    # macOS specific flags (if any)
+elif [[ "$OS_TYPE_LOWER" == "android" ]]; then
+    echo "Configuring for Android $ARTIFACT_SUFFIX (API $API_LEVEL)..."
+    # Ensure ANDROID_NDK_HOME is set
+    if [ -z "$ANDROID_NDK_HOME" ]; then
+        echo "Error: ANDROID_NDK_HOME environment variable is not set."
+        exit 1
+    fi
+    TOOLCHAIN_BIN_PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" # Runner is linux
+
+    TOOLCHAIN_PREFIX=""
+    CONFIGURE_ARCH=""
+    # Determine arch from ARTIFACT_SUFFIX
+    case "$ARTIFACT_SUFFIX" in
+        *"arm64-v8a")
+            TOOLCHAIN_PREFIX="aarch64-linux-android"
+            CONFIGURE_ARCH="aarch64"
+            ;;
+        *"armeabi-v7a")
+            TOOLCHAIN_PREFIX="armv7a-linux-androideabi"
+            CONFIGURE_ARCH="arm"
+            ;;
+        *"x86_64")
+            TOOLCHAIN_PREFIX="x86_64-linux-android"
+            CONFIGURE_ARCH="x86_64"
+            ;;
+        *"x86")
+            TOOLCHAIN_PREFIX="i686-linux-android"
+            CONFIGURE_ARCH="x86"
+            ;;
+        *)
+            echo "Unsupported Android artifact suffix: $ARTIFACT_SUFFIX"
+            exit 1
+            ;;
+    esac
+
+    # Construct full paths to tools
+    CC="$TOOLCHAIN_BIN_PATH/${TOOLCHAIN_PREFIX}${API_LEVEL}-clang"
+    CXX="$TOOLCHAIN_BIN_PATH/${TOOLCHAIN_PREFIX}${API_LEVEL}-clang++"
+    AR="$TOOLCHAIN_BIN_PATH/llvm-ar"
+    RANLIB="$TOOLCHAIN_BIN_PATH/llvm-ranlib"
+    STRIP="$TOOLCHAIN_BIN_PATH/llvm-strip"
+
+    # Check if the full path to the compiler exists
+    if [ ! -f "$CC" ]; then
+        echo "Error: Android clang compiler not found at expected path: $CC"
+        echo "Please check NDK installation and environment variables."
+        exit 1
+    fi
+
+    CONFIG_FLAGS+=(
+        "--target-os=android" # Use "android" here
+        "--arch=$CONFIGURE_ARCH"
+        "--cc=$CC"
+        "--cxx=$CXX"
+        "--ar=$AR"
+        "--ranlib=$RANLIB"
+        "--strip=$STRIP"
+        # Sysroot is usually handled automatically when using the full compiler path
+        "--cross-prefix=${TOOLCHAIN_PREFIX}-" # Keep this for FFmpeg's internal toolchain detection
+        "--enable-jni"      # Required for Android integration
+        # Disable features not available/needed on Android
+        "--disable-iconv"
+        "--disable-xlib"
+    )
 fi
 
 # Print configure command for debugging
@@ -222,4 +230,4 @@ cd "$INSTALL_DIR"
 tar -czf "$GITHUB_WORKSPACE/$PACKAGE_NAME" include lib
 cd "$GITHUB_WORKSPACE"
 
-echo "--- Successfully built and packaged $PACKAGE_NAME ---"
+echo "--- Successfully built and packaged $PACKAGE_NAME ($ARTIFACT_SUFFIX) ---"
