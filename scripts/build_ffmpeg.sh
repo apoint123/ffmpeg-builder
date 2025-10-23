@@ -1,13 +1,13 @@
 #!/bin/bash
-set -e # Exit immediately if a command exits with a non-zero status.
+set -e
 
-# --- Configuration ---
 TARGET="$1"      # e.g., x86_64-unknown-linux-gnu (unused in this simple script, but good practice)
 ARCH="$2"        # e.g., x64
 OS_TYPE="$3"     # e.g., linux
+OS_TYPE_LOWER=$(echo "$OS_TYPE" | tr '[:upper:]' '[:lower:]')
 FFMPEG_VERSION="8.0"
 INSTALL_DIR="$GITHUB_WORKSPACE/ffmpeg_install"
-PACKAGE_NAME="ffmpeg-${FFMPEG_VERSION}-${OS_TYPE}-${ARCH}.tar.gz"
+PACKAGE_NAME="ffmpeg-${FFMPEG_VERSION}-${OS_TYPE_LOWER}-${ARCH}.tar.gz"
 SOURCE_DIR="$GITHUB_WORKSPACE/ffmpeg_source" # Separate directory for source code
 
 echo "--- Starting FFmpeg build for $OS_TYPE-$ARCH ---"

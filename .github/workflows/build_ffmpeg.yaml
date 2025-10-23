@@ -1,10 +1,9 @@
-# In .github/workflows/build_ffmpeg.yaml
 name: Build FFmpeg Static Libraries
 
 on:
-  workflow_dispatch: # Allows manual triggering
+  workflow_dispatch:
   push:
-    branches: [main] # Trigger on push to main
+    branches: [main]
 
 jobs:
   build_and_package:
@@ -52,27 +51,23 @@ jobs:
             build_script: ./scripts/build_ffmpeg.sh
             package_extension: tar.gz
 
-        # --- Android builds will be added later ---
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      # --- Linux Dependency ---
       - name: Install Build Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential yasm nasm curl
 
-      # --- Windows Dependencies (vcpkg with cache) ---
       - name: Cache vcpkg (Windows)
         if: runner.os == 'Windows'
         uses: actions/cache@v4
-        id: cache-vcpkg # Give cache step an ID
+        id: cache-vcpkg
         with:
           path: D:/vcpkg
-          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-v1 # Added a version suffix
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-v1
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
       - name: Install vcpkg (Windows, if cache missed)
@@ -92,22 +87,18 @@ jobs:
         run: echo "VCPKG_ROOT=D:/vcpkg" >> $GITHUB_ENV
         shell: bash
 
-      # --- macOS Dependencies ---
       - name: Install Build Dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install yasm nasm # FFmpeg build requires these assemblers
+        run: brew install yasm nasm
 
-      # --- Build Step (Only for platforms NOT using vcpkg) ---
       - name: Ensure build script is executable (Linux/macOS)
         if: runner.os != 'Windows' && matrix.build_script
         run: chmod +x ${{ matrix.build_script }}
 
       - name: Run Build Script (Linux/macOS)
         if: runner.os != 'Windows' && matrix.build_script
-        # Pass parameters: target triple, arch (short name), os type (lowercase)
         run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.arch }} ${{ runner.os }}
 
-      # --- Package Step (Only for platforms using vcpkg) ---
       - name: Package vcpkg output (Windows)
         if: runner.os == 'Windows'
         id: package_windows
