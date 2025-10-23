@@ -1,0 +1,202 @@
+name: Build FFmpeg Static Libraries
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  ANDROID_NDK_VERSION: 26b
+
+jobs:
+  build_and_package:
+    name: Build for ${{ matrix.target || matrix.triplet || matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            arch: x64
+            artifact_name_suffix: linux-x64
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+
+          - triplet: x64-windows-static-md
+            os: windows-latest
+            arch: x64
+            artifact_name_suffix: windows-x64
+            package_extension: zip
+
+          - triplet: arm64-windows-static-md
+            os: windows-latest
+            arch: arm64
+            artifact_name_suffix: windows-arm64
+            package_extension: zip
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            arch: x64
+            artifact_name_suffix: macos-x64
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+
+          - target: aarch64-apple-darwin
+            os: macos-14
+            arch: arm64
+            artifact_name_suffix: macos-arm64
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+
+          - target: aarch64-linux-android
+            os: ubuntu-latest
+            arch: arm64-v8a
+            artifact_name_suffix: android-arm64-v8a
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+            api_level: 26
+
+          - target: armv7a-linux-androideabi
+            os: ubuntu-latest
+            arch: armeabi-v7a
+            artifact_name_suffix: android-armeabi-v7a
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+            api_level: 26
+
+          - target: x86_64-linux-android
+            os: ubuntu-latest
+            arch: x86_64
+            artifact_name_suffix: android-x86_64
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+            api_level: 26
+
+          - target: i686-linux-android
+            os: ubuntu-latest
+            arch: x86
+            artifact_name_suffix: android-x86
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+            api_level: 26
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install Build Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential yasm nasm curl pkg-config
+
+      - name: Setup Android NDK
+        if: contains(matrix.target, 'android')
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r${{ env.ANDROID_NDK_VERSION }}
+          add-to-path: true
+
+      - name: Cache vcpkg (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        id: cache-vcpkg
+        with:
+          path: D:/vcpkg
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-v1
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
+
+      - name: Install vcpkg (Windows, if cache missed)
+        if: runner.os == 'Windows' && steps.cache-vcpkg.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git D:/vcpkg
+          D:/vcpkg/bootstrap-vcpkg.bat
+        shell: cmd
+
+      - name: Install FFmpeg via vcpkg (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          D:/vcpkg/vcpkg integrate install
+          D:/vcpkg/vcpkg install ffmpeg --triplet ${{ matrix.triplet }}
+        shell: powershell
+
+      - name: Set vcpkg environment variable (Windows)
+        if: runner.os == 'Windows'
+        run: echo "VCPKG_ROOT=D:/vcpkg" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Install Build Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install yasm nasm pkg-config
+
+      - name: Ensure build script is executable (Linux/macOS)
+        if: runner.os != 'Windows' && matrix.build_script
+        run: chmod +x ${{ matrix.build_script }}
+
+      - name: Run Build Script (Linux/macOS/Android)
+        if: runner.os != 'Windows' && matrix.build_script
+        run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.artifact_name_suffix }} ${{ runner.os }} ${{ matrix.api_level || '' }}
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Package vcpkg output (Windows)
+        if: runner.os == 'Windows'
+        id: package_windows
+        run: |
+          $VCPKG_INSTALL_PATH = "D:/vcpkg/installed/${{ matrix.triplet }}"
+          $FFMPEG_VERSION_TAG = "7.1"
+          $PACKAGE_NAME = "ffmpeg-${FFMPEG_VERSION_TAG}-${{ matrix.artifact_name_suffix }}.${{ matrix.package_extension }}"
+          $PACKAGE_PATH = Join-Path $env:GITHUB_WORKSPACE $PACKAGE_NAME
+          Compress-Archive -Path "$VCPKG_INSTALL_PATH/include", "$VCPKG_INSTALL_PATH/lib" -DestinationPath $PACKAGE_PATH -Force
+          echo "Created package: $PACKAGE_NAME"
+          echo "package_path=$PACKAGE_PATH" >> $env:GITHUB_OUTPUT
+        shell: powershell
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.artifact_name_suffix }}
+          path: |
+            ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '7.1', matrix.artifact_name_suffix, matrix.package_extension) }}
+        env:
+          FFMPEG_VERSION_TAG: "7.1"
+
+  create_release:
+    name: Create GitHub Release
+    needs: [build_and_package]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set Release Tag and Name
+        id: set_version
+        run: |
+          VERSION_TAG="ffmpeg-${{ env.FFMPEG_VERSION_TAG }}-${{ github.sha }}"
+          RELEASE_NAME="FFmpeg ${{ env.FFMPEG_VERSION_TAG }} Static Build (${{ github.sha }})"
+          echo "tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
+          echo "name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
+        env:
+          FFMPEG_VERSION_TAG: "7.1"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
+      - name: Create or Update Release with Artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.set_version.outputs.tag }}
+          name: ${{ steps.set_version.outputs.name }}
+          files: |
+            artifacts/ffmpeg-*/ffmpeg-*.zip
+            artifacts/ffmpeg-*/ffmpeg-*.tar.gz
+          prerelease: true
