@@ -132,6 +132,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install yasm nasm pkg-config
 
+      - name: Ensure build script is executable (Linux/macOS)
+        if: runner.os != 'Windows' && matrix.build_script
+        run: chmod +x ${{ matrix.build_script }}
+
       - name: Run Build Script (Linux/macOS/Android)
         if: runner.os != 'Windows' && matrix.build_script
         run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.artifact_name_suffix }} ${{ runner.os }} ${{ matrix.api_level || '' }}
