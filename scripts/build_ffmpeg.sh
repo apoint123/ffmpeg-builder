@@ -132,7 +132,12 @@ CONFIG_FLAGS=(
 if [[ "$OS_TYPE_LOWER" == "linux" ]]; then
     if [[ "$TARGET" == *"-android"* ]]; then
         echo "Configuring for Android $ARCH (API $API_LEVEL)..."
-        # NDK toolchain should be in PATH thanks to setup-ndk action
+       if [ -z "$ANDROID_NDK_HOME" ]; then
+           echo "Error: ANDROID_NDK_HOME environment variable is not set."
+           exit 1
+       fi
+       TOOLCHAIN_BIN_PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
         TOOLCHAIN_PREFIX=""
         CONFIGURE_ARCH=""
         case "$ARCH" in
@@ -158,17 +163,15 @@ if [[ "$OS_TYPE_LOWER" == "linux" ]]; then
                 ;;
         esac
 
-        # Construct tool paths using the prefix and API level
-        CC="${TOOLCHAIN_PREFIX}${API_LEVEL}-clang"
-        CXX="${TOOLCHAIN_PREFIX}${API_LEVEL}-clang++"
-        AR="llvm-ar"
-        RANLIB="llvm-ranlib"
-        STRIP="llvm-strip"
+        CC="$TOOLCHAIN_BIN_PATH/${TOOLCHAIN_PREFIX}${API_LEVEL}-clang"
+        CXX="$TOOLCHAIN_BIN_PATH/${TOOLCHAIN_PREFIX}${API_LEVEL}-clang++"
+        AR="$TOOLCHAIN_BIN_PATH/llvm-ar"
+        RANLIB="$TOOLCHAIN_BIN_PATH/llvm-ranlib"
+        STRIP="$TOOLCHAIN_BIN_PATH/llvm-strip"
 
-        # Check if compiler exists
-        if ! command -v $CC &> /dev/null; then
-            echo "Error: Android clang compiler not found in PATH: $CC"
-            echo "PATH is: $PATH"
+        if [ ! -f "$CC" ]; then
+            echo "Error: Android clang compiler not found at expected path: $CC"
+            echo "Please check NDK installation and environment variables."
             exit 1
         fi
 
@@ -180,21 +183,14 @@ if [[ "$OS_TYPE_LOWER" == "linux" ]]; then
             "--ar=$AR"
             "--ranlib=$RANLIB"
             "--strip=$STRIP"
-            # Sysroot is usually handled by the NDK clang wrapper, but specify if needed
-            # "--sysroot=$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-            "--cross-prefix=${TOOLCHAIN_PREFIX}-"
-            "--enable-jni"      # Required for Android integration
-            # Disable features not available/needed on Android
+            # Sysroot is usually handled automatically when using the full compiler path
+            "--cross-prefix=${TOOLCHAIN_PREFIX}-" # Keep this for FFmpeg's internal toolchain detection
+            "--enable-jni"
             "--disable-iconv"
             "--disable-xlib"
-            # Explicitly disable assembly for problematic archs if needed
-            # if [[ "$CONFIGURE_ARCH" == "x86" || "$CONFIGURE_ARCH" == "x86_64" ]]; then
-            #   CONFIG_FLAGS+=("--disable-asm")
-            # fi
         )
     else
         echo "Configuring for Linux $ARCH..."
-        # Standard Linux build, no special flags needed usually
     fi
 elif [[ "$OS_TYPE_LOWER" == "macos" ]]; then
     echo "Configuring for macOS $ARCH..."
