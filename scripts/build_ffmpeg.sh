@@ -6,7 +6,7 @@ ARTIFACT_SUFFIX="$2"
 RUNNER_OS="$3"
 API_LEVEL="$4"
 
-FFMPEG_VERSION="8.0"
+FFMPEG_VERSION="7.1"
 INSTALL_DIR="$GITHUB_WORKSPACE/ffmpeg_install_${ARTIFACT_SUFFIX}"
 SOURCE_DIR="$GITHUB_WORKSPACE/ffmpeg_source_${ARTIFACT_SUFFIX}"
 PACKAGE_NAME="ffmpeg-${FFMPEG_VERSION}-${ARTIFACT_SUFFIX}.tar.gz"
@@ -18,22 +18,16 @@ echo "Installation directory: $INSTALL_DIR"
 echo "Output package: $PACKAGE_NAME"
 [[ -n "$API_LEVEL" ]] && echo "Android API Level: $API_LEVEL"
 
-# --- 1. Download and Extract FFmpeg Source ---
-echo "Downloading FFmpeg source..."
 mkdir -p "$SOURCE_DIR"
 cd "$SOURCE_DIR"
-# Avoid re-downloading if source already exists (useful for local testing)
 if [ ! -f "ffmpeg-${FFMPEG_VERSION}/configure" ]; then
     curl -sL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz" -o ffmpeg.tar.gz
     echo "Extracting FFmpeg source..."
     tar -xf ffmpeg.tar.gz --strip-components=1
     rm ffmpeg.tar.gz
-else
-    echo "Source directory already exists, skipping download/extract."
 fi
-cd "$SOURCE_DIR" # Ensure we are in the source directory
+cd "$SOURCE_DIR"
 
-# --- 2. Configure FFmpeg ---
 echo "Configuring FFmpeg..."
 CONFIG_FLAGS=(
     "--prefix=$INSTALL_DIR"
@@ -210,21 +204,17 @@ elif [[ "$OS_TYPE_LOWER" == "android" ]]; then
     )
 fi
 
-# Print configure command for debugging
 echo "Running ./configure with flags:"
 printf '%q ' "${CONFIG_FLAGS[@]}"
 echo
 
-# Run configure
 ./configure "${CONFIG_FLAGS[@]}"
 
-# --- 3. Compile and Install ---
 echo "Compiling FFmpeg..."
 make -j$(nproc)
 echo "Installing FFmpeg..."
 make install
 
-# --- 4. Package Artifact ---
 echo "Packaging artifact..."
 cd "$INSTALL_DIR"
 tar -czf "$GITHUB_WORKSPACE/$PACKAGE_NAME" include lib

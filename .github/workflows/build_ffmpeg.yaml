@@ -57,16 +57,16 @@ jobs:
           # --- Android arm64-v8a ---
           - target: aarch64-linux-android
             os: ubuntu-latest
-            arch: arm64-v8a # Use Android ABI name
+            arch: arm64-v8a
             artifact_name_suffix: android-arm64-v8a
             build_script: ./scripts/build_ffmpeg.sh
             package_extension: tar.gz
             api_level: 26 # Define API level for Android
 
           # --- Android armeabi-v7a ---
-          - target: armv7a-linux-androideabi # Note the 'a'
+          - target: armv7a-linux-androideabi
             os: ubuntu-latest
-            arch: armeabi-v7a # Use Android ABI name
+            arch: armeabi-v7a
             artifact_name_suffix: android-armeabi-v7a
             build_script: ./scripts/build_ffmpeg.sh
             package_extension: tar.gz
@@ -75,7 +75,7 @@ jobs:
           # --- Android x86_64 ---
           - target: x86_64-linux-android
             os: ubuntu-latest
-            arch: x86_64 # Use Android ABI name
+            arch: x86_64
             artifact_name_suffix: android-x86_64
             build_script: ./scripts/build_ffmpeg.sh
             package_extension: tar.gz
@@ -84,7 +84,7 @@ jobs:
           # --- Android x86 ---
           - target: i686-linux-android
             os: ubuntu-latest
-            arch: x86 # Use Android ABI name
+            arch: x86
             artifact_name_suffix: android-x86
             build_script: ./scripts/build_ffmpeg.sh
             package_extension: tar.gz
@@ -153,7 +153,7 @@ jobs:
         id: package_windows
         run: |
           $VCPKG_INSTALL_PATH = "D:/vcpkg/installed/${{ matrix.triplet }}"
-          $FFMPEG_VERSION_TAG = "8.0" # Must match Linux script version
+          $FFMPEG_VERSION_TAG = "7.1"
           $PACKAGE_NAME = "ffmpeg-${FFMPEG_VERSION_TAG}-${{ matrix.artifact_name_suffix }}.${{ matrix.package_extension }}"
           $PACKAGE_PATH = Join-Path $env:GITHUB_WORKSPACE $PACKAGE_NAME
           Compress-Archive -Path "$VCPKG_INSTALL_PATH/include", "$VCPKG_INSTALL_PATH/lib" -DestinationPath $PACKAGE_PATH -Force
@@ -166,6 +166,42 @@ jobs:
         with:
           name: ffmpeg-${{ matrix.artifact_name_suffix }}
           path: |
-            ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '8.0', matrix.artifact_name_suffix, matrix.package_extension) }}
+            ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '7.1', matrix.artifact_name_suffix, matrix.package_extension) }}
         env:
-          FFMPEG_VERSION_TAG: "8.0"
+          FFMPEG_VERSION_TAG: "7.1"
+  create_release:
+    name: Create GitHub Release
+    needs: [build_and_package]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set Release Tag and Name
+        id: set_version
+        run: |
+          VERSION_TAG="ffmpeg-${{ env.FFMPEG_VERSION_TAG }}-${{ github.sha }}"
+          RELEASE_NAME="FFmpeg ${{ env.FFMPEG_VERSION_TAG }} Static Build (${{ github.sha }})"
+          echo "tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
+          echo "name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
+        env:
+          FFMPEG_VERSION_TAG: "7.1"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create or Update Release with Artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.set_version.outputs.tag }}
+          name: ${{ steps.set_version.outputs.name }}
+          files: |
+            artifacts/ffmpeg-*/ffmpeg-*.zip
+            artifacts/ffmpeg-*/ffmpeg-*.tar.gz
+          prerelease: true
