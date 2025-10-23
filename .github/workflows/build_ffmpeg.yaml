@@ -90,12 +90,14 @@ jobs:
       # --- Package Step (Only for platforms using vcpkg) ---
       - name: Package vcpkg output (Windows)
         if: runner.os == 'Windows'
+        id: package_windows
         run: |
           $VCPKG_INSTALL_PATH = "D:/vcpkg/installed/${{ matrix.triplet }}"
           $PACKAGE_NAME = "ffmpeg-${{ env.FFMPEG_VERSION_TAG || 'latest' }}-${{ matrix.artifact_name_suffix }}.${{ matrix.package_extension }}"
           # Package include and lib directories
           Compress-Archive -Path "$VCPKG_INSTALL_PATH/include", "$VCPKG_INSTALL_PATH/lib" -DestinationPath "$GITHUB_WORKSPACE/$PACKAGE_NAME"
           echo "Created package: $PACKAGE_NAME"
+          echo "package_path=$PACKAGE_PATH" >> $env:GITHUB_OUTPUT
         shell: powershell
         env:
           # We need a version tag for the package name. Let's define one.
@@ -107,7 +109,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-${{ matrix.artifact_name_suffix }}
-          # Use a pattern that matches both extensions
-          path: ffmpeg-*.${{ matrix.package_extension }}
-
+          path: ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || 'unknown', matrix.artifact_name_suffix, matrix.package_extension) }}
+        env:
+          FFMPEG_VERSION_TAG: "8.0"
     # --- Release Job 将在稍后添加 ---
