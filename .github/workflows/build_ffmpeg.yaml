@@ -8,50 +8,106 @@ on:
 
 jobs:
   build_and_package:
-    name: Build for ${{ matrix.target }}
+    name: Build for ${{ matrix.target || matrix.triplet }} # Use triplet name for Windows
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # --- Linux ---
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             arch: x64
             artifact_name_suffix: linux-x64
-            build_script: ./scripts/build_ffmpeg.sh # Script path is correct
-        # --- 我们稍后会在这里添加 Windows, macOS 和 Android ---
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz # Linux uses tar.gz
+
+          # --- Windows x64 ---
+          - triplet: x64-windows-static-md # Use vcpkg triplet for Windows
+            os: windows-latest
+            arch: x64
+            artifact_name_suffix: windows-x64
+            # No build_script needed for vcpkg
+            package_extension: zip # Windows uses zip
+
+          # --- Windows arm64 ---
+          - triplet: arm64-windows-static-md # Use vcpkg triplet for Windows
+            os: windows-latest
+            arch: arm64
+            artifact_name_suffix: windows-arm64
+            # No build_script needed for vcpkg
+            package_extension: zip # Windows uses zip
+
+        # --- 我们稍后会在这里添加 macOS 和 Android ---
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --- Linux Dependency ---
       - name: Install Build Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential yasm nasm curl
 
-      # --- 其他平台的依赖安装步骤将在这里添加 ---
+      # --- Windows Dependencies (vcpkg with cache) ---
+      - name: Cache vcpkg (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: D:/vcpkg # Use a fixed path for simplicity in CI
+          # Key includes OS, triplet (which implies arch and static linkage)
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ hashFiles('**/vcpkg.json') }} # vcpkg.json doesn't exist here yet, maybe use commit hash later? For now, just triplet.
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
 
-      # --- [移除] 不再需要创建占位脚本 ---
-      # - name: Create scripts directory (insurance)
-      # - name: Create Placeholder Build Script (Linux/macOS)
-      # - name: Create Placeholder Build Script (Windows)
+      - name: Install vcpkg (Windows, if cache missed)
+        if: runner.os == 'Windows' && steps.cache-vcpkg.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git D:/vcpkg
+          D:/vcpkg/bootstrap-vcpkg.bat
+        shell: cmd
 
+      - name: Install FFmpeg via vcpkg (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          D:/vcpkg/vcpkg integrate install
+          D:/vcpkg/vcpkg install ffmpeg --triplet ${{ matrix.triplet }}
+        shell: powershell
+
+      # --- macOS Dependencies will be added here ---
+
+      # --- Build Step (Only for platforms NOT using vcpkg) ---
       - name: Ensure build script is executable (Linux/macOS)
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.build_script
         run: chmod +x ${{ matrix.build_script }}
 
-      - name: Run Build Script
-        # Pass parameters: target triple, arch (short name), os type (lowercase)
+      - name: Run Build Script (Linux/macOS)
+        if: runner.os != 'Windows' && matrix.build_script
         run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.arch }} ${{ runner.os }}
 
+      # --- Package Step (Only for platforms using vcpkg) ---
+      - name: Package vcpkg output (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $VCPKG_INSTALL_PATH = "D:/vcpkg/installed/${{ matrix.triplet }}"
+          $PACKAGE_NAME = "ffmpeg-${{ env.FFMPEG_VERSION_TAG || 'latest' }}-${{ matrix.artifact_name_suffix }}.${{ matrix.package_extension }}"
+          # Package include and lib directories
+          Compress-Archive -Path "$VCPKG_INSTALL_PATH/include", "$VCPKG_INSTALL_PATH/lib" -DestinationPath "$GITHUB_WORKSPACE/$PACKAGE_NAME"
+          echo "Created package: $PACKAGE_NAME"
+        shell: powershell
+        env:
+          # We need a version tag for the package name. Let's define one.
+          # Ideally, read from vcpkg installed version, but hardcoding is simpler for now.
+          FFMPEG_VERSION_TAG: "vcpkg-build" # Or extract dynamically later
+
+      # --- Upload Step (Handles both .tar.gz and .zip) ---
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-${{ matrix.artifact_name_suffix }}
-          # Use pattern matching to find the generated package
-          path: ffmpeg-*.tar.gz # For Linux/macOS
-          # path: ffmpeg-*.zip # For Windows (will add later)
+          # Use a pattern that matches both extensions
+          path: ffmpeg-*.${{ matrix.package_extension }}
 
     # --- Release Job 将在稍后添加 ---
