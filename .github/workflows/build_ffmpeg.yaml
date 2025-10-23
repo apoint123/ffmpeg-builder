@@ -192,7 +192,7 @@ jobs:
           FFMPEG_VERSION_TAG: "7.1"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: artifacts
 
