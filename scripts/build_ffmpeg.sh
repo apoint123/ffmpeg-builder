@@ -42,7 +42,6 @@ CONFIG_FLAGS=(
     "--disable-avdevice"
     "--disable-avfilter"
     "--disable-swscale"
-    "--disable-postproc"
     "--disable-encoders"
     "--disable-decoders"
     "--disable-hwaccels"
