@@ -1,65 +1,57 @@
+# In .github/workflows/build_ffmpeg.yaml
 name: Build FFmpeg Static Libraries
 
 on:
-    workflow_dispatch:
-    push:
-        branches: [main]
+  workflow_dispatch: # 允许手动触发
+  push:
+    branches: [main] # 推送到 main 分支时触发
 
 jobs:
-    build_and_package:
-        name: Build for ${{ matrix.target }}
-        runs-on: ${{ matrix.os }}
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - target: x86_64-unknown-linux-gnu
-                      os: ubuntu-latest
-                      arch: x64
-                      artifact_name_suffix: linux-x64
-                      build_script: ./scripts/build_ffmpeg.sh
+  build_and_package:
+    name: Build for ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            arch: x64
+            artifact_name_suffix: linux-x64
+            build_script: ./scripts/build_ffmpeg.sh # Script path is correct
+        # --- 我们稍后会在这里添加 Windows, macOS 和 Android ---
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            - name: Install Build Dependencies (Linux)
-              if: runner.os == 'Linux'
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y build-essential yasm nasm curl
+      - name: Install Build Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential yasm nasm curl
 
-            - name: Create scripts directory (insurance)
-              run: mkdir -p scripts
+      # --- 其他平台的依赖安装步骤将在这里添加 ---
 
-            - name: Create Placeholder Build Script (Linux/macOS)
-              if: runner.os != 'Windows'
-              run: |
-                  echo '#!/bin/bash' > ${{ matrix.build_script }}
-                  echo 'set -e' >> ${{ matrix.build_script }}
-                  echo 'TARGET="$1"' >> ${{ matrix.build_script }}
-                  echo 'ARCH="$2"' >> ${{ matrix.build_script }}
-                  echo 'OS_TYPE="$3"' >> ${{ matrix.build_script }}
-                  echo 'echo "--- Running placeholder build script ---"' >> ${{ matrix.build_script }}
-                  echo 'echo "Target: $TARGET"' >> ${{ matrix.build_script }}
-                  echo 'echo "Arch: $ARCH"' >> ${{ matrix.build_script }}
-                  echo 'echo "OS: $OS_TYPE"' >> ${{ matrix.build_script }}
-                  # --- 创建虚拟输出 ---
-                  echo 'INSTALL_DIR="ffmpeg_install"' >> ${{ matrix.build_script }}
-                  echo 'mkdir -p "$INSTALL_DIR/lib"' >> ${{ matrix.build_script }}
-                  echo 'echo "dummy" > "$INSTALL_DIR/lib/libavutil.a"' >> ${{ matrix.build_script }}
-                  echo 'mkdir -p "$INSTALL_DIR/include/libavutil"' >> ${{ matrix.build_script }}
-                  echo 'echo "// dummy" > "$INSTALL_DIR/include/libavutil/avutil.h"' >> ${{ matrix.build_script }}
-                  echo 'PACKAGE_NAME="ffmpeg-dummy-${OS_TYPE}-${ARCH}.tar.gz"' >> ${{ matrix.build_script }}
-                  echo 'tar -czf "$PACKAGE_NAME" -C "$INSTALL_DIR" include lib' >> ${{ matrix.build_script }}
-                  echo 'echo "--- Placeholder script finished ---"' >> ${{ matrix.build_script }}
-                  chmod +x ${{ matrix.build_script }}
+      # --- [移除] 不再需要创建占位脚本 ---
+      # - name: Create scripts directory (insurance)
+      # - name: Create Placeholder Build Script (Linux/macOS)
+      # - name: Create Placeholder Build Script (Windows)
 
-            - name: Run Build Script
-              run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.arch }} ${{ runner.os }}
+      - name: Ensure build script is executable (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: chmod +x ${{ matrix.build_script }}
 
-            - name: Upload Artifact
-              uses: actions/upload-artifact@v4
-              with:
-                  name: ffmpeg-${{ matrix.artifact_name_suffix }}
-                  path: ffmpeg-dummy-*.tar.gz
+      - name: Run Build Script
+        # Pass parameters: target triple, arch (short name), os type (lowercase)
+        run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.arch }} ${{ runner.os }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.artifact_name_suffix }}
+          # Use pattern matching to find the generated package
+          path: ffmpeg-*.tar.gz # For Linux/macOS
+          # path: ffmpeg-*.zip # For Windows (will add later)
+
+    # --- Release Job 将在稍后添加 ---
