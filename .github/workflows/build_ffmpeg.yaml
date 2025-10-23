@@ -5,9 +5,12 @@ on:
   push:
     branches: [main]
 
+env:
+  ANDROID_NDK_VERSION: 26b
+
 jobs:
   build_and_package:
-    name: Build for ${{ matrix.target || matrix.triplet }}
+    name: Build for ${{ matrix.target || matrix.triplet || matrix.arch }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -37,7 +40,7 @@ jobs:
 
           # --- macOS x64 (Intel) ---
           - target: x86_64-apple-darwin
-            os: macos-latest # GitHub Actions uses Intel runners for macos-latest
+            os: macos-latest
             arch: x64
             artifact_name_suffix: macos-x64
             build_script: ./scripts/build_ffmpeg.sh
@@ -45,11 +48,47 @@ jobs:
 
           # --- macOS arm64 (Apple Silicon) ---
           - target: aarch64-apple-darwin
-            os: macos-14 # Specify Sonoma runner for native arm64
+            os: macos-14
             arch: arm64
             artifact_name_suffix: macos-arm64
             build_script: ./scripts/build_ffmpeg.sh
             package_extension: tar.gz
+
+          # --- Android arm64-v8a ---
+          - target: aarch64-linux-android
+            os: ubuntu-latest
+            arch: arm64-v8a # Use Android ABI name
+            artifact_name_suffix: android-arm64-v8a
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+            api_level: 26 # Define API level for Android
+
+          # --- Android armeabi-v7a ---
+          - target: armv7a-linux-androideabi # Note the 'a'
+            os: ubuntu-latest
+            arch: armeabi-v7a # Use Android ABI name
+            artifact_name_suffix: android-armeabi-v7a
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+            api_level: 26
+
+          # --- Android x86_64 ---
+          - target: x86_64-linux-android
+            os: ubuntu-latest
+            arch: x86_64 # Use Android ABI name
+            artifact_name_suffix: android-x86_64
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+            api_level: 26
+
+          # --- Android x86 ---
+          - target: i686-linux-android
+            os: ubuntu-latest
+            arch: x86 # Use Android ABI name
+            artifact_name_suffix: android-x86
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+            api_level: 26
 
     steps:
       - name: Checkout repository
@@ -59,7 +98,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential yasm nasm curl
+          sudo apt-get install -y build-essential yasm nasm curl pkg-config
+
+      - name: Setup Android NDK
+        if: contains(matrix.target, 'android')
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r${{ env.ANDROID_NDK_VERSION }}
+          add-to-path: true
 
       - name: Cache vcpkg (Windows)
         if: runner.os == 'Windows'
@@ -89,15 +136,17 @@ jobs:
 
       - name: Install Build Dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install yasm nasm
+        run: brew install yasm nasm pkg-config
 
       - name: Ensure build script is executable (Linux/macOS)
         if: runner.os != 'Windows' && matrix.build_script
         run: chmod +x ${{ matrix.build_script }}
 
-      - name: Run Build Script (Linux/macOS)
+      - name: Run Build Script (Linux/macOS/Android)
         if: runner.os != 'Windows' && matrix.build_script
-        run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.arch }} ${{ runner.os }}
+        run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.arch }} ${{ runner.os }} ${{ matrix.api_level || '' }}
+        env:
+          ANDROID_NDK_LATEST_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
       - name: Package vcpkg output (Windows)
         if: runner.os == 'Windows'
