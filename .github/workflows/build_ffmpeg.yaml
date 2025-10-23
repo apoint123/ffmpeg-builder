@@ -2,13 +2,13 @@
 name: Build FFmpeg Static Libraries
 
 on:
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch: # Allows manual triggering
   push:
-    branches: [main] # 推送到 main 分支时触发
+    branches: [main] # Trigger on push to main
 
 jobs:
   build_and_package:
-    name: Build for ${{ matrix.target || matrix.triplet }} # Use triplet name for Windows
+    name: Build for ${{ matrix.target || matrix.triplet }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -20,29 +20,43 @@ jobs:
             arch: x64
             artifact_name_suffix: linux-x64
             build_script: ./scripts/build_ffmpeg.sh
-            package_extension: tar.gz # Linux uses tar.gz
+            package_extension: tar.gz
 
           # --- Windows x64 ---
-          - triplet: x64-windows-static-md # Use vcpkg triplet for Windows
+          - triplet: x64-windows-static-md
             os: windows-latest
             arch: x64
             artifact_name_suffix: windows-x64
-            # No build_script needed for vcpkg
-            package_extension: zip # Windows uses zip
+            package_extension: zip
 
           # --- Windows arm64 ---
-          - triplet: arm64-windows-static-md # Use vcpkg triplet for Windows
+          - triplet: arm64-windows-static-md
             os: windows-latest
             arch: arm64
             artifact_name_suffix: windows-arm64
-            # No build_script needed for vcpkg
-            package_extension: zip # Windows uses zip
+            package_extension: zip
 
-        # --- 我们稍后会在这里添加 macOS 和 Android ---
+          # --- macOS x64 (Intel) ---
+          - target: x86_64-apple-darwin
+            os: macos-latest # GitHub Actions uses Intel runners for macos-latest
+            arch: x64
+            artifact_name_suffix: macos-x64
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+
+          # --- macOS arm64 (Apple Silicon) ---
+          - target: aarch64-apple-darwin
+            os: macos-14 # Specify Sonoma runner for native arm64
+            arch: arm64
+            artifact_name_suffix: macos-arm64
+            build_script: ./scripts/build_ffmpeg.sh
+            package_extension: tar.gz
+
+        # --- Android builds will be added later ---
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # --- Linux Dependency ---
       - name: Install Build Dependencies (Linux)
@@ -55,28 +69,33 @@ jobs:
       - name: Cache vcpkg (Windows)
         if: runner.os == 'Windows'
         uses: actions/cache@v4
+        id: cache-vcpkg # Give cache step an ID
         with:
-          path: D:/vcpkg # Use a fixed path for simplicity in CI
-          # Key includes OS, triplet (which implies arch and static linkage)
-          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ hashFiles('**/vcpkg.json') }} # vcpkg.json doesn't exist here yet, maybe use commit hash later? For now, just triplet.
+          path: D:/vcpkg
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-v1 # Added a version suffix
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
-
       - name: Install vcpkg (Windows, if cache missed)
         if: runner.os == 'Windows' && steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/microsoft/vcpkg.git D:/vcpkg
           D:/vcpkg/bootstrap-vcpkg.bat
         shell: cmd
-
       - name: Install FFmpeg via vcpkg (Windows)
         if: runner.os == 'Windows'
         run: |
           D:/vcpkg/vcpkg integrate install
           D:/vcpkg/vcpkg install ffmpeg --triplet ${{ matrix.triplet }}
         shell: powershell
+      - name: Set vcpkg environment variable (Windows)
+        if: runner.os == 'Windows'
+        run: echo "VCPKG_ROOT=D:/vcpkg" >> $GITHUB_ENV
+        shell: bash
 
-      # --- macOS Dependencies will be added here ---
+      # --- macOS Dependencies ---
+      - name: Install Build Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install yasm nasm # FFmpeg build requires these assemblers
 
       # --- Build Step (Only for platforms NOT using vcpkg) ---
       - name: Ensure build script is executable (Linux/macOS)
@@ -85,6 +104,7 @@ jobs:
 
       - name: Run Build Script (Linux/macOS)
         if: runner.os != 'Windows' && matrix.build_script
+        # Pass parameters: target triple, arch (short name), os type (lowercase)
         run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.arch }} ${{ runner.os }}
 
       # --- Package Step (Only for platforms using vcpkg) ---
@@ -93,52 +113,19 @@ jobs:
         id: package_windows
         run: |
           $VCPKG_INSTALL_PATH = "D:/vcpkg/installed/${{ matrix.triplet }}"
-          $FFMPEG_VERSION_TAG = "8.0" # Example: Match Linux script version
+          $FFMPEG_VERSION_TAG = "8.0" # Must match Linux script version
           $PACKAGE_NAME = "ffmpeg-${FFMPEG_VERSION_TAG}-${{ matrix.artifact_name_suffix }}.${{ matrix.package_extension }}"
           $PACKAGE_PATH = Join-Path $env:GITHUB_WORKSPACE $PACKAGE_NAME
-
-          echo "--- Debug Info ---"
-          echo "GITHUB_WORKSPACE is: $env:GITHUB_WORKSPACE"
-          echo "Calculated PACKAGE_PATH is: $PACKAGE_PATH"
-          echo "Vcpkg install path exists: $(Test-Path $VCPKG_INSTALL_PATH)"
-          echo "Vcpkg include path exists: $(Test-Path (Join-Path $VCPKG_INSTALL_PATH 'include'))"
-          echo "Vcpkg lib path exists: $(Test-Path (Join-Path $VCPKG_INSTALL_PATH 'lib'))"
-          echo "------------------"
-
-          # Package include and lib directories
           Compress-Archive -Path "$VCPKG_INSTALL_PATH/include", "$VCPKG_INSTALL_PATH/lib" -DestinationPath $PACKAGE_PATH -Force
           echo "Created package: $PACKAGE_NAME"
-
-          # Check if the file actually exists after creation
-          if (Test-Path $PACKAGE_PATH) {
-            echo "VERIFICATION: File $PACKAGE_PATH successfully created."
-          } else {
-            echo "ERROR: File $PACKAGE_PATH was NOT created!"
-            exit 1 # Fail the job if file doesn't exist
-          }
-
-          # Output the full path of the created package
           echo "package_path=$PACKAGE_PATH" >> $env:GITHUB_OUTPUT
         shell: powershell
 
-      # --- [新增] 列出工作目录文件 (调试步骤) ---
-      - name: List files in workspace (Debug)
-        run: |
-          echo "Listing files in GITHUB_WORKSPACE ($GITHUB_WORKSPACE):"
-          ls -l $GITHUB_WORKSPACE
-        shell: bash # Use bash for ls, works cross-platform in runners
-
-      # --- Upload Step (Handles both .tar.gz and .zip) ---
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-${{ matrix.artifact_name_suffix }}
           path: |
-            ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '6.1.1', matrix.artifact_name_suffix, matrix.package_extension) }}
+            ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '8.0', matrix.artifact_name_suffix, matrix.package_extension) }}
         env:
           FFMPEG_VERSION_TAG: "8.0"
-      # --- [新增] 打印上传路径 (调试步骤) ---
-      - name: Print Upload Path (Debug)
-        run: |
-          echo "Upload step will use path: ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '6.1.1', matrix.artifact_name_suffix, matrix.package_extension) }}"
-        shell: bash
