@@ -1,0 +1,65 @@
+name: Build FFmpeg Static Libraries
+
+on:
+    workflow_dispatch:
+    push:
+        branches: [master]
+
+jobs:
+    build_and_package:
+        name: Build for ${{ matrix.target }}
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - target: x86_64-unknown-linux-gnu
+                      os: ubuntu-latest
+                      arch: x64
+                      artifact_name_suffix: linux-x64
+                      build_script: ./scripts/build_ffmpeg.sh
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install Build Dependencies (Linux)
+              if: runner.os == 'Linux'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y build-essential yasm nasm curl
+
+            - name: Create scripts directory (insurance)
+              run: mkdir -p scripts
+
+            - name: Create Placeholder Build Script (Linux/macOS)
+              if: runner.os != 'Windows'
+              run: |
+                  echo '#!/bin/bash' > ${{ matrix.build_script }}
+                  echo 'set -e' >> ${{ matrix.build_script }}
+                  echo 'TARGET="$1"' >> ${{ matrix.build_script }}
+                  echo 'ARCH="$2"' >> ${{ matrix.build_script }}
+                  echo 'OS_TYPE="$3"' >> ${{ matrix.build_script }}
+                  echo 'echo "--- Running placeholder build script ---"' >> ${{ matrix.build_script }}
+                  echo 'echo "Target: $TARGET"' >> ${{ matrix.build_script }}
+                  echo 'echo "Arch: $ARCH"' >> ${{ matrix.build_script }}
+                  echo 'echo "OS: $OS_TYPE"' >> ${{ matrix.build_script }}
+                  # --- 创建虚拟输出 ---
+                  echo 'INSTALL_DIR="ffmpeg_install"' >> ${{ matrix.build_script }}
+                  echo 'mkdir -p "$INSTALL_DIR/lib"' >> ${{ matrix.build_script }}
+                  echo 'echo "dummy" > "$INSTALL_DIR/lib/libavutil.a"' >> ${{ matrix.build_script }}
+                  echo 'mkdir -p "$INSTALL_DIR/include/libavutil"' >> ${{ matrix.build_script }}
+                  echo 'echo "// dummy" > "$INSTALL_DIR/include/libavutil/avutil.h"' >> ${{ matrix.build_script }}
+                  echo 'PACKAGE_NAME="ffmpeg-dummy-${OS_TYPE}-${ARCH}.tar.gz"' >> ${{ matrix.build_script }}
+                  echo 'tar -czf "$PACKAGE_NAME" -C "$INSTALL_DIR" include lib' >> ${{ matrix.build_script }}
+                  echo 'echo "--- Placeholder script finished ---"' >> ${{ matrix.build_script }}
+                  chmod +x ${{ matrix.build_script }}
+
+            - name: Run Build Script
+              run: ${{ matrix.build_script }} ${{ matrix.target }} ${{ matrix.arch }} ${{ runner.os }}
+
+            - name: Upload Artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ffmpeg-${{ matrix.artifact_name_suffix }}
+                  path: ffmpeg-dummy-*.tar.gz
