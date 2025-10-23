@@ -93,23 +93,52 @@ jobs:
         id: package_windows
         run: |
           $VCPKG_INSTALL_PATH = "D:/vcpkg/installed/${{ matrix.triplet }}"
-          $PACKAGE_NAME = "ffmpeg-${{ env.FFMPEG_VERSION_TAG || 'latest' }}-${{ matrix.artifact_name_suffix }}.${{ matrix.package_extension }}"
+          $FFMPEG_VERSION_TAG = "8.0" # Example: Match Linux script version
+          $PACKAGE_NAME = "ffmpeg-${FFMPEG_VERSION_TAG}-${{ matrix.artifact_name_suffix }}.${{ matrix.package_extension }}"
+          $PACKAGE_PATH = Join-Path $env:GITHUB_WORKSPACE $PACKAGE_NAME
+
+          echo "--- Debug Info ---"
+          echo "GITHUB_WORKSPACE is: $env:GITHUB_WORKSPACE"
+          echo "Calculated PACKAGE_PATH is: $PACKAGE_PATH"
+          echo "Vcpkg install path exists: $(Test-Path $VCPKG_INSTALL_PATH)"
+          echo "Vcpkg include path exists: $(Test-Path (Join-Path $VCPKG_INSTALL_PATH 'include'))"
+          echo "Vcpkg lib path exists: $(Test-Path (Join-Path $VCPKG_INSTALL_PATH 'lib'))"
+          echo "------------------"
+
           # Package include and lib directories
-          Compress-Archive -Path "$VCPKG_INSTALL_PATH/include", "$VCPKG_INSTALL_PATH/lib" -DestinationPath "$GITHUB_WORKSPACE/$PACKAGE_NAME"
+          Compress-Archive -Path "$VCPKG_INSTALL_PATH/include", "$VCPKG_INSTALL_PATH/lib" -DestinationPath $PACKAGE_PATH -Force
           echo "Created package: $PACKAGE_NAME"
+
+          # Check if the file actually exists after creation
+          if (Test-Path $PACKAGE_PATH) {
+            echo "VERIFICATION: File $PACKAGE_PATH successfully created."
+          } else {
+            echo "ERROR: File $PACKAGE_PATH was NOT created!"
+            exit 1 # Fail the job if file doesn't exist
+          }
+
+          # Output the full path of the created package
           echo "package_path=$PACKAGE_PATH" >> $env:GITHUB_OUTPUT
         shell: powershell
-        env:
-          # We need a version tag for the package name. Let's define one.
-          # Ideally, read from vcpkg installed version, but hardcoding is simpler for now.
-          FFMPEG_VERSION_TAG: "vcpkg-build" # Or extract dynamically later
+
+      # --- [新增] 列出工作目录文件 (调试步骤) ---
+      - name: List files in workspace (Debug)
+        run: |
+          echo "Listing files in GITHUB_WORKSPACE ($GITHUB_WORKSPACE):"
+          ls -l $GITHUB_WORKSPACE
+        shell: bash # Use bash for ls, works cross-platform in runners
 
       # --- Upload Step (Handles both .tar.gz and .zip) ---
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-${{ matrix.artifact_name_suffix }}
-          path: ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || 'unknown', matrix.artifact_name_suffix, matrix.package_extension) }}
+          path: |
+            ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '6.1.1', matrix.artifact_name_suffix, matrix.package_extension) }}
         env:
           FFMPEG_VERSION_TAG: "8.0"
-    # --- Release Job 将在稍后添加 ---
+      # --- [新增] 打印上传路径 (调试步骤) ---
+      - name: Print Upload Path (Debug)
+        run: |
+          echo "Upload step will use path: ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '6.1.1', matrix.artifact_name_suffix, matrix.package_extension) }}"
+        shell: bash
