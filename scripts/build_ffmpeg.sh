@@ -96,20 +96,31 @@ if [[ "$OS_TYPE_LOWER" == "linux" ]]; then
     echo "Configuring for Linux ($ARTIFACT_SUFFIX)..."
 elif [[ "$OS_TYPE_LOWER" == "macos" ]]; then
     echo "Configuring for macOS ($ARTIFACT_SUFFIX)..."
+    export CC="clang"
+    export CXX="clang++"
+
     if [[ "$TARGET" == "x86_64-apple-darwin" ]]; then
+        export CFLAGS="-target x86_64-apple-darwin -mmacosx-version-min=10.11"
+        export LDFLAGS="-target x86_64-apple-darwin -mmacosx-version-min=10.11"
         CONFIG_FLAGS+=(
             "--target-os=darwin"
             "--arch=x86_64"
+            "--cc=$CC"
+            "--cxx=$CXX"
             "--disable-asm"
-            "--extra-cflags=-mmacosx-version-min=10.11"
-            "--extra-ldflags=-mmacosx-version-min=10.11"
+            "--extra-cflags=$CFLAGS"
+            "--extra-ldflags=$LDFLAGS"
         )
     elif [[ "$TARGET" == "aarch64-apple-darwin" ]]; then
+        export CFLAGS="-target aarch64-apple-darwin -mmacosx-version-min=11.0"
+        export LDFLAGS="-target aarch64-apple-darwin -mmacosx-version-min=11.0"
         CONFIG_FLAGS+=(
             "--target-os=darwin"
             "--arch=arm64"
-            "--extra-cflags=-mmacosx-version-min=11.0"
-            "--extra-ldflags=-mmacosx-version-min=11.0"
+            "--cc=$CC"
+            "--cxx=$CXX"
+            "--extra-cflags=$CFLAGS"
+            "--extra-ldflags=$LDFLAGS"
         )
     else
         echo "Error: Unsupported macOS target: $TARGET"

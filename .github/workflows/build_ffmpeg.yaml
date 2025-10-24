@@ -199,4 +199,4 @@ jobs:
           files: |
             artifacts/ffmpeg-*/ffmpeg-*.zip
             artifacts/ffmpeg-*/ffmpeg-*.tar.gz
-          prerelease: true
+          prerelease: false
