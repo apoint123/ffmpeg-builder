@@ -96,6 +96,25 @@ if [[ "$OS_TYPE_LOWER" == "linux" ]]; then
     echo "Configuring for Linux ($ARTIFACT_SUFFIX)..."
 elif [[ "$OS_TYPE_LOWER" == "macos" ]]; then
     echo "Configuring for macOS ($ARTIFACT_SUFFIX)..."
+    if [[ "$TARGET" == "x86_64-apple-darwin" ]]; then
+        CONFIG_FLAGS+=(
+            "--target-os=darwin"
+            "--arch=x86_64"
+            "--disable-asm"
+            "--extra-cflags=-mmacosx-version-min=10.11"
+            "--extra-ldflags=-mmacosx-version-min=10.11"
+        )
+    elif [[ "$TARGET" == "aarch64-apple-darwin" ]]; then
+        CONFIG_FLAGS+=(
+            "--target-os=darwin"
+            "--arch=arm64"
+            "--extra-cflags=-mmacosx-version-min=11.0"
+            "--extra-ldflags=-mmacosx-version-min=11.0"
+        )
+    else
+        echo "Error: Unsupported macOS target: $TARGET"
+        exit 1
+    fi
 elif [[ "$OS_TYPE_LOWER" == "android" ]]; then
     echo "Configuring for Android $ARTIFACT_SUFFIX (API $API_LEVEL)..."
     if [ -z "$ANDROID_NDK_HOME" ]; then
