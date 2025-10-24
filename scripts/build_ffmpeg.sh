@@ -148,10 +148,12 @@ elif [[ "$OS_TYPE_LOWER" == "android" ]]; then
         *"x86_64")
             TOOLCHAIN_PREFIX="x86_64-linux-android"
             CONFIGURE_ARCH="x86_64"
+            CONFIG_FLAGS+=("--disable-asm")
             ;;
         *"x86")
             TOOLCHAIN_PREFIX="i686-linux-android"
             CONFIGURE_ARCH="x86"
+            CONFIG_FLAGS+=("--disable-asm")
             ;;
         *)
             echo "Unsupported Android artifact suffix: $ARTIFACT_SUFFIX"
