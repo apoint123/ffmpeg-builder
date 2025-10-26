@@ -156,7 +156,7 @@ jobs:
         shell: powershell
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ffmpeg-${{ matrix.artifact_name_suffix }}
           path: |
