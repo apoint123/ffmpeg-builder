@@ -31,7 +31,6 @@ CONFIG_FLAGS=(
     "--prefix=$INSTALL_DIR"
     "--enable-static"
     "--disable-shared"
-    "--disable-everything"
     "--disable-programs"
     "--disable-doc"
     "--disable-network"
