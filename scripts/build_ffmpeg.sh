@@ -90,6 +90,8 @@ elif [[ "$ARTIFACT_SUFFIX" == *"macos"* ]]; then
     OS_TYPE_LOWER="macos"
 elif [[ "$ARTIFACT_SUFFIX" == *"android"* ]]; then
     OS_TYPE_LOWER="android"
+elif [[ "$ARTIFACT_SUFFIX" == *"ios"* ]]; then
+    OS_TYPE_LOWER="ios"
 fi
 
 if [[ "$OS_TYPE_LOWER" == "linux" ]]; then
@@ -141,6 +143,25 @@ elif [[ "$OS_TYPE_LOWER" == "macos" ]]; then
         echo "Error: Unsupported macOS target: $TARGET"
         exit 1
     fi
+elif [[ "$OS_TYPE_LOWER" == "ios" ]]; then
+    echo "Configuring for iOS ($ARTIFACT_SUFFIX)..."
+    SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+    export CC="clang"
+    export AS="gas-preprocessor.pl -arch arm64 -- clang"
+
+    export CFLAGS="-arch arm64 -isysroot $SDK_PATH -miphoneos-version-min=13.0 -fembed-bitcode"
+    export LDFLAGS="-arch arm64 -isysroot $SDK_PATH -miphoneos-version-min=13.0"
+
+    CONFIG_FLAGS+=(
+            "--enable-cross-compile"
+            "--target-os=darwin"
+            "--arch=arm64"
+            "--cc=$CC"
+            "--cxx=$CXX"
+            "--disable-asm"
+            "--extra-cflags=$CFLAGS"
+            "--extra-ldflags=$LDFLAGS"
+    )
 elif [[ "$OS_TYPE_LOWER" == "android" ]]; then
     echo "Configuring for Android $ARTIFACT_SUFFIX (API $API_LEVEL)..."
     if [ -z "$ANDROID_NDK_HOME" ]; then
