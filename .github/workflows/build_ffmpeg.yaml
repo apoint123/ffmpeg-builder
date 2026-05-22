@@ -111,11 +111,11 @@ jobs:
 
       - name: Cache vcpkg (Windows)
         if: runner.os == 'Windows'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: cache-vcpkg
         with:
           path: D:/vcpkg
-          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-v1
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-v2
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
 
@@ -130,7 +130,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           D:/vcpkg/vcpkg integrate install
-          D:/vcpkg/vcpkg install ffmpeg --triplet ${{ matrix.triplet }}
+          D:/vcpkg/vcpkg install ffmpeg --triplet ${{ matrix.triplet }} --overlay-ports=${{ github.workspace }}/ports
         shell: powershell
 
       - name: Set vcpkg environment variable (Windows)
@@ -157,7 +157,7 @@ jobs:
         id: package_windows
         run: |
           $VCPKG_INSTALL_PATH = "D:/vcpkg/installed/${{ matrix.triplet }}"
-          $FFMPEG_VERSION_TAG = "7.1"
+          $FFMPEG_VERSION_TAG = "8.0.1"
           $PACKAGE_NAME = "ffmpeg-${FFMPEG_VERSION_TAG}-${{ matrix.artifact_name_suffix }}.${{ matrix.package_extension }}"
           $PACKAGE_PATH = Join-Path $env:GITHUB_WORKSPACE $PACKAGE_NAME
           Compress-Archive -Path "$VCPKG_INSTALL_PATH/include", "$VCPKG_INSTALL_PATH/lib" -DestinationPath $PACKAGE_PATH -Force
@@ -166,13 +166,13 @@ jobs:
         shell: powershell
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ffmpeg-${{ matrix.artifact_name_suffix }}
           path: |
-            ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '7.1', matrix.artifact_name_suffix, matrix.package_extension) }}
+            ${{ runner.os == 'Windows' && steps.package_windows.outputs.package_path || format('ffmpeg-{0}-{1}.{2}', env.FFMPEG_VERSION_TAG || '8.0.1', matrix.artifact_name_suffix, matrix.package_extension) }}
         env:
-          FFMPEG_VERSION_TAG: "7.1"
+          FFMPEG_VERSION_TAG: "8.0.1"
 
   create_release:
     name: Create GitHub Release
@@ -194,10 +194,10 @@ jobs:
           echo "tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
           echo "name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
         env:
-          FFMPEG_VERSION_TAG: "7.1"
+          FFMPEG_VERSION_TAG: "8.0.1"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
